@@ -428,7 +428,6 @@ impl ReceiverCore {
         self.diagnostics.jitter_us = u32::try_from(jitter_us).unwrap_or(u32::MAX);
         self.adaptive.observe(
             self.diagnostics.incomplete_frames,
-            self.diagnostics.dropped_frames,
             self.diagnostics.rtt_us,
             estimated_send_rate_bps,
         );
@@ -509,17 +508,11 @@ impl ReceiverCore {
             return Err(ReceiverError::UnsupportedConfiguration);
         }
         if reconfigure {
-            self.adaptive.reconfigure(
-                &configuration,
-                self.diagnostics.incomplete_frames,
-                self.diagnostics.dropped_frames,
-            );
+            self.adaptive
+                .reconfigure(&configuration, self.diagnostics.incomplete_frames);
         } else {
-            self.adaptive = AdaptiveController::new(
-                &configuration,
-                self.diagnostics.incomplete_frames,
-                self.diagnostics.dropped_frames,
-            );
+            self.adaptive =
+                AdaptiveController::new(&configuration, self.diagnostics.incomplete_frames);
         }
         self.configuration = Some(configuration);
         self.phase = SessionPhase::Configured;
@@ -643,33 +636,22 @@ struct AdaptiveController {
     requested_bitrate_bps: u32,
     requested_fps: u32,
     previous_incomplete: u64,
-    previous_dropped: u64,
     healthy_intervals: u8,
 }
 
 impl AdaptiveController {
-    fn new(
-        configuration: &MediaConfiguration,
-        previous_incomplete: u64,
-        previous_dropped: u64,
-    ) -> Self {
+    fn new(configuration: &MediaConfiguration, previous_incomplete: u64) -> Self {
         Self {
             nominal_bitrate_bps: configuration.target_bitrate_bps,
             nominal_fps: configuration.fps,
             requested_bitrate_bps: configuration.target_bitrate_bps,
             requested_fps: configuration.fps,
             previous_incomplete,
-            previous_dropped,
             ..Self::default()
         }
     }
 
-    fn reconfigure(
-        &mut self,
-        configuration: &MediaConfiguration,
-        previous_incomplete: u64,
-        previous_dropped: u64,
-    ) {
+    fn reconfigure(&mut self, configuration: &MediaConfiguration, previous_incomplete: u64) {
         self.nominal_bitrate_bps = self
             .nominal_bitrate_bps
             .max(configuration.target_bitrate_bps);
@@ -677,23 +659,18 @@ impl AdaptiveController {
         self.requested_bitrate_bps = configuration.target_bitrate_bps;
         self.requested_fps = configuration.fps;
         self.previous_incomplete = previous_incomplete;
-        self.previous_dropped = previous_dropped;
         self.healthy_intervals = 0;
     }
 
-    fn observe(
-        &mut self,
-        incomplete: u64,
-        dropped: u64,
-        rtt_us: u32,
-        estimated_send_rate_bps: Option<u64>,
-    ) {
+    fn observe(&mut self, incomplete: u64, rtt_us: u32, estimated_send_rate_bps: Option<u64>) {
         if self.nominal_bitrate_bps == 0 {
             return;
         }
-        let loss = incomplete > self.previous_incomplete || dropped > self.previous_dropped;
+        // `dropped_frames` also includes intentional latest-only replacement,
+        // old-generation datagrams after reconfiguration and local publish
+        // skips. Only incomplete media assembly is a network-loss signal.
+        let loss = incomplete > self.previous_incomplete;
         self.previous_incomplete = incomplete;
-        self.previous_dropped = dropped;
         let constrained_rate = estimated_send_rate_bps
             .filter(|rate| *rate > 0)
             .filter(|rate| *rate < u64::from(self.requested_bitrate_bps));
@@ -1184,6 +1161,19 @@ mod tests {
         core.handle_control(ControlMessage::v1(ControlPayload::Start))
             .unwrap();
         assert_eq!(core.phase(), SessionPhase::Streaming);
+        let stale = fragment_media_frame(
+            MediaFlow::Color,
+            MediaFlags::empty(),
+            1,
+            99,
+            0,
+            b"old-generation",
+            64,
+        )
+        .unwrap()
+        .remove(0);
+        core.push_media_datagram(&stale, Instant::now()).unwrap();
+        assert!(core.diagnostics().dropped_frames > 0);
 
         for _ in 0..4 {
             core.update_network_diagnostics(20_000, 100, Some(200_000_000));
