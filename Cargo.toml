@@ -23,7 +23,7 @@ x509-cert = { version = "0.2.5", default-features = false, features = ["std"] }
 
 [target.'cfg(windows)'.dependencies]
 mutsuki-link = { git = "https://github.com/sena-nana/MutsukiLink.git", rev = "2ffca07", features = ["system-keyring"] }
-nanalive-spout = { git = "https://github.com/sena-nana/nanalive-spout.git", rev = "7f7dfe1", default-features = false, features = ["gpu-dx11-texture"] }
+nanalive-spout = { git = "https://github.com/sena-nana/nanalive-spout.git", rev = "7f7dfe1d551a3b5bc99fbf2ad95d82a67ef0214a", default-features = false, features = ["gpu-dx11-texture"] }
 tray-icon = { version = "0.24.1", default-features = false, features = ["common-controls-v6"] }
 windows = { version = "0.61.3", features = [
     "Win32_Foundation",

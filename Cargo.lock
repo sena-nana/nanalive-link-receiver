@@ -750,7 +750,7 @@ dependencies = [
 [[package]]
 name = "nanalive-spout"
 version = "0.1.1"
-source = "git+https://github.com/sena-nana/nanalive-spout.git?rev=7f7dfe1#7f7dfe1d551a3b5bc99fbf2ad95d82a67ef0214a"
+source = "git+https://github.com/sena-nana/nanalive-spout.git?rev=7f7dfe1d551a3b5bc99fbf2ad95d82a67ef0214a#7f7dfe1d551a3b5bc99fbf2ad95d82a67ef0214a"
 dependencies = [
  "nanalive-spout-sys",
 ]
@@ -758,7 +758,7 @@ dependencies = [
 [[package]]
 name = "nanalive-spout-sys"
 version = "0.1.1"
-source = "git+https://github.com/sena-nana/nanalive-spout.git?rev=7f7dfe1#7f7dfe1d551a3b5bc99fbf2ad95d82a67ef0214a"
+source = "git+https://github.com/sena-nana/nanalive-spout.git?rev=7f7dfe1d551a3b5bc99fbf2ad95d82a67ef0214a#7f7dfe1d551a3b5bc99fbf2ad95d82a67ef0214a"
 dependencies = [
  "cc",
 ]
