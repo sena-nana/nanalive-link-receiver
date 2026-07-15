@@ -92,6 +92,7 @@ mod windows_main {
     use nanalive_link_receiver::windows::{
         HardwarePipeline, PublishResult, TrayController, TrayState,
     };
+    use std::net::SocketAddr;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
