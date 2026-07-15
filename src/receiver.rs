@@ -96,6 +96,7 @@ impl From<ProtocolError> for ReceiverError {
 struct InflightFrame {
     deadline: Instant,
     insertion_order: u64,
+    first_received_at: Instant,
 }
 
 pub struct ReceiverCore {
@@ -269,7 +270,7 @@ impl ReceiverCore {
         if self.dropped_frames.contains_key(&frame_key) {
             return Ok(());
         }
-        self.track_inflight_frame(frame_key, deadline);
+        self.track_inflight_frame(frame_key, deadline, received_at);
         match self
             .reassembler
             .push_datagram(datagram, received_at, deadline)?
@@ -303,9 +304,12 @@ impl ReceiverCore {
                         alpha: alpha.alpha,
                         playout_at: deadline,
                     };
-                    self.inflight_frames
-                        .remove(&(pair.generation, pair.frame_id));
-                    self.frame_received_at.insert(pair.frame_id, received_at);
+                    let first_received_at = self
+                        .inflight_frames
+                        .remove(&(pair.generation, pair.frame_id))
+                        .map_or(received_at, |frame| frame.first_received_at);
+                    self.frame_received_at
+                        .insert(pair.frame_id, first_received_at);
                     while self.frame_received_at.len() > MAX_INCOMPLETE_FRAMES {
                         if let Some(oldest) = self.frame_received_at.keys().next().copied() {
                             self.frame_received_at.remove(&oldest);
@@ -440,10 +444,20 @@ impl ReceiverCore {
     }
 
     pub fn receiver_report(
-        &self,
+        &mut self,
         decode_queue_depth: u16,
         hardware_decode_active: bool,
     ) -> ControlMessage {
+        let now = Instant::now();
+        while self
+            .published_window
+            .front()
+            .is_some_and(|instant| now.saturating_duration_since(*instant) > Duration::from_secs(1))
+        {
+            self.published_window.pop_front();
+        }
+        self.diagnostics.complete_frame_fps =
+            u32::try_from(self.published_window.len()).unwrap_or(u32::MAX);
         let configuration = self.configuration.as_ref();
         ControlMessage::v1(ControlPayload::ReceiverReport(ReceiverReport {
             generation: configuration.map_or(0, |value| value.generation),
@@ -531,7 +545,7 @@ impl ReceiverCore {
             .unwrap_or_else(|| received_at.checked_add(frame_delay).unwrap_or(received_at))
     }
 
-    fn track_inflight_frame(&mut self, key: (u16, u32), deadline: Instant) {
+    fn track_inflight_frame(&mut self, key: (u16, u32), deadline: Instant, received_at: Instant) {
         if let Some(frame) = self.inflight_frames.get_mut(&key) {
             frame.deadline = frame.deadline.min(deadline);
             return;
@@ -552,6 +566,7 @@ impl ReceiverCore {
             InflightFrame {
                 deadline,
                 insertion_order,
+                first_received_at: received_at,
             },
         );
         self.refresh_jitter_buffer_depth();
