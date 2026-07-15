@@ -15,23 +15,22 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_CREATE_DEVICE_VIDEO_SUPPORT, D3D11_SDK_VERSION, D3D11_SHADER_RESOURCE_VIEW_DESC1,
     D3D11_SHADER_RESOURCE_VIEW_DESC1_0, D3D11_TEX2D_ARRAY_SRV1, D3D11_TEX2D_SRV1,
     D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_VIEWPORT, D3D11CreateDevice, ID3D11Device,
-    ID3D11Device1, ID3D11DeviceContext, ID3D11PixelShader, ID3D11RenderTargetView,
-    ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader,
+    ID3D11Device3, ID3D11DeviceContext, ID3D11PixelShader, ID3D11RenderTargetView,
+    ID3D11ShaderResourceView, ID3D11ShaderResourceView1, ID3D11Texture2D, ID3D11VertexShader,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8_UNORM, DXGI_FORMAT_R8G8_UNORM, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Media::MediaFoundation::{
-    IMFActivate, IMFAttributes, IMFDXGIBuffer, IMFMediaType, IMFSample, IMFTransform,
-    MF_E_NOTACCEPTING, MF_E_TRANSFORM_NEED_MORE_INPUT, MF_LOW_LATENCY, MF_MT_FRAME_SIZE,
-    MF_MT_INTERLACE_MODE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MF_SA_D3D11_AWARE, MF_VERSION,
-    MFCreateDXGIDeviceManager, MFCreateMediaType, MFCreateMemoryBuffer, MFCreateSample,
-    MFMediaType_Video, MFSetAttributeSize, MFShutdown, MFStartup, MFT_CATEGORY_VIDEO_DECODER,
-    MFT_ENUM_FLAG_HARDWARE, MFT_ENUM_FLAG_SORTANDFILTER, MFT_MESSAGE_NOTIFY_BEGIN_STREAMING,
-    MFT_MESSAGE_NOTIFY_END_OF_STREAM, MFT_MESSAGE_NOTIFY_START_OF_STREAM,
-    MFT_MESSAGE_SET_D3D_MANAGER, MFT_OUTPUT_DATA_BUFFER, MFT_OUTPUT_STREAM_PROVIDES_SAMPLES,
-    MFT_REGISTER_TYPE_INFO, MFTEnumEx, MFVideoFormat_H264, MFVideoFormat_NV12,
-    MFVideoInterlace_Progressive,
+    IMFActivate, IMFAttributes, IMFDXGIBuffer, IMFMediaType, IMFTransform, MF_E_NOTACCEPTING,
+    MF_E_TRANSFORM_NEED_MORE_INPUT, MF_LOW_LATENCY, MF_MT_FRAME_SIZE, MF_MT_INTERLACE_MODE,
+    MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MF_SA_D3D11_AWARE, MF_VERSION, MFCreateDXGIDeviceManager,
+    MFCreateMediaType, MFCreateMemoryBuffer, MFCreateSample, MFMediaType_Video, MFShutdown,
+    MFStartup, MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG_HARDWARE, MFT_ENUM_FLAG_SORTANDFILTER,
+    MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, MFT_MESSAGE_NOTIFY_END_OF_STREAM,
+    MFT_MESSAGE_NOTIFY_START_OF_STREAM, MFT_MESSAGE_SET_D3D_MANAGER, MFT_OUTPUT_DATA_BUFFER,
+    MFT_OUTPUT_STREAM_PROVIDES_SAMPLES, MFT_REGISTER_TYPE_INFO, MFTEnumEx, MFVideoFormat_H264,
+    MFVideoFormat_NV12, MFVideoInterlace_Progressive,
 };
 use windows::Win32::System::Com::{
     COINIT_MULTITHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize,
@@ -337,7 +336,10 @@ impl HardwareH264Decoder {
     unsafe fn try_output(&self) -> Result<Option<DecodedTexture>> {
         let mut output = MFT_OUTPUT_DATA_BUFFER::default();
         let mut status = 0;
-        let result = unsafe { self.transform.ProcessOutput(0, 1, &mut output, &mut status) };
+        let result = unsafe {
+            self.transform
+                .ProcessOutput(0, std::slice::from_mut(&mut output), &mut status)
+        };
         let events = unsafe { ManuallyDrop::take(&mut output.pEvents) };
         drop(events);
         if let Err(error) = result {
@@ -423,7 +425,8 @@ fn video_type(subtype: windows::core::GUID, width: u32, height: u32) -> Result<I
         let attributes: IMFAttributes = media_type.cast()?;
         attributes.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)?;
         attributes.SetGUID(&MF_MT_SUBTYPE, &subtype)?;
-        MFSetAttributeSize(&attributes, &MF_MT_FRAME_SIZE, width, height)?;
+        let frame_size = (u64::from(width) << 32) | u64::from(height);
+        attributes.SetUINT64(&MF_MT_FRAME_SIZE, frame_size)?;
         Ok(media_type)
     }
 }
@@ -519,11 +522,11 @@ impl GpuCompositor {
                 self.width,
                 0,
             );
-            let device1: ID3D11Device1 = device
+            let device3: ID3D11Device3 = device
                 .cast()
-                .context("D3D11.1 is required for NV12 plane views")?;
-            let y_view = create_plane_view(&device1, decoded, DXGI_FORMAT_R8_UNORM, 0)?;
-            let uv_view = create_plane_view(&device1, decoded, DXGI_FORMAT_R8G8_UNORM, 1)?;
+                .context("D3D11.3 is required for NV12 plane views")?;
+            let y_view = create_plane_view(&device3, decoded, DXGI_FORMAT_R8_UNORM, 0)?;
+            let uv_view = create_plane_view(&device3, decoded, DXGI_FORMAT_R8G8_UNORM, 1)?;
             let resources = [Some(y_view), Some(uv_view), Some(self.alpha_view.clone())];
             context.PSSetShaderResources(0, Some(&resources));
             context.VSSetShader(&self.vertex_shader, None);
@@ -545,7 +548,7 @@ impl GpuCompositor {
 }
 
 unsafe fn create_plane_view(
-    device: &ID3D11Device1,
+    device: &ID3D11Device3,
     decoded: &DecodedTexture,
     format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
     plane: u32,
@@ -587,11 +590,13 @@ unsafe fn create_plane_view(
             },
         },
     };
-    let mut view = None;
+    let mut view: Option<ID3D11ShaderResourceView1> = None;
     unsafe {
         device.CreateShaderResourceView1(&decoded.texture, Some(&desc), Some(&mut view))?;
     }
-    view.context("create NV12 plane shader view")
+    view.context("create NV12 plane shader view")?
+        .cast()
+        .context("cast NV12 plane shader view")
 }
 
 unsafe fn compile_shader(

@@ -38,7 +38,7 @@ pub struct TrayController {
 
 impl TrayController {
     pub fn start(shutdown: Arc<AtomicBool>) -> Result<Self> {
-        let (state, receiver) = mpsc::channel();
+        let (state, receiver) = mpsc::channel::<TrayState>();
         let reconnect = Arc::new(AtomicBool::new(false));
         let reconnect_thread = Arc::clone(&reconnect);
         std::thread::Builder::new()
