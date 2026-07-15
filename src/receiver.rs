@@ -186,9 +186,12 @@ impl ReceiverCore {
                     Self::capabilities(),
                 ))])
             }
-            ControlPayload::Configure(configuration)
-            | ControlPayload::Reconfigure(configuration) => {
-                self.apply_configuration(configuration)?;
+            ControlPayload::Configure(configuration) => {
+                self.apply_configuration(configuration, false)?;
+                Ok(Vec::new())
+            }
+            ControlPayload::Reconfigure(configuration) => {
+                self.apply_configuration(configuration, true)?;
                 Ok(Vec::new())
             }
             ControlPayload::Capabilities(capabilities) => {
@@ -487,6 +490,7 @@ impl ReceiverCore {
     fn apply_configuration(
         &mut self,
         configuration: MediaConfiguration,
+        reconfigure: bool,
     ) -> Result<(), ReceiverError> {
         configuration.validate_v1()?;
         let sender = self
@@ -504,7 +508,19 @@ impl ReceiverCore {
         {
             return Err(ReceiverError::UnsupportedConfiguration);
         }
-        self.adaptive = AdaptiveController::new(&configuration);
+        if reconfigure {
+            self.adaptive.reconfigure(
+                &configuration,
+                self.diagnostics.incomplete_frames,
+                self.diagnostics.dropped_frames,
+            );
+        } else {
+            self.adaptive = AdaptiveController::new(
+                &configuration,
+                self.diagnostics.incomplete_frames,
+                self.diagnostics.dropped_frames,
+            );
+        }
         self.configuration = Some(configuration);
         self.phase = SessionPhase::Configured;
         self.reset_media_state()
@@ -632,14 +648,37 @@ struct AdaptiveController {
 }
 
 impl AdaptiveController {
-    fn new(configuration: &MediaConfiguration) -> Self {
+    fn new(
+        configuration: &MediaConfiguration,
+        previous_incomplete: u64,
+        previous_dropped: u64,
+    ) -> Self {
         Self {
             nominal_bitrate_bps: configuration.target_bitrate_bps,
             nominal_fps: configuration.fps,
             requested_bitrate_bps: configuration.target_bitrate_bps,
             requested_fps: configuration.fps,
+            previous_incomplete,
+            previous_dropped,
             ..Self::default()
         }
+    }
+
+    fn reconfigure(
+        &mut self,
+        configuration: &MediaConfiguration,
+        previous_incomplete: u64,
+        previous_dropped: u64,
+    ) {
+        self.nominal_bitrate_bps = self
+            .nominal_bitrate_bps
+            .max(configuration.target_bitrate_bps);
+        self.nominal_fps = self.nominal_fps.max(configuration.fps);
+        self.requested_bitrate_bps = configuration.target_bitrate_bps;
+        self.requested_fps = configuration.fps;
+        self.previous_incomplete = previous_incomplete;
+        self.previous_dropped = previous_dropped;
+        self.healthy_intervals = 0;
     }
 
     fn observe(
@@ -1134,6 +1173,17 @@ mod tests {
         };
         assert_eq!(constrained.requested_bitrate_bps, 8_000_000);
         assert_eq!(constrained.requested_fps, 60);
+
+        let mut adaptive_configuration = core.configuration().unwrap().clone();
+        adaptive_configuration.generation = 2;
+        adaptive_configuration.target_bitrate_bps = constrained.requested_bitrate_bps;
+        core.handle_control(ControlMessage::v1(ControlPayload::Reconfigure(
+            adaptive_configuration,
+        )))
+        .unwrap();
+        core.handle_control(ControlMessage::v1(ControlPayload::Start))
+            .unwrap();
+        assert_eq!(core.phase(), SessionPhase::Streaming);
 
         for _ in 0..4 {
             core.update_network_diagnostics(20_000, 100, Some(200_000_000));
