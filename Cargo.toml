@@ -2,7 +2,7 @@
 name = "nanalive-link-receiver"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT"
 description = "Windows NanaLive Link receiver with D3D11 hardware decode and Spout output"
 
@@ -10,7 +10,7 @@ description = "Windows NanaLive Link receiver with D3D11 hardware decode and Spo
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 mutsuki-link = { git = "https://github.com/sena-nana/MutsukiLink.git", rev = "2ffca07", features = ["mdns", "pairing", "quic"] }
-nanalive-link-protocol = { path = "vendor/NanaLive/src-tauri/crates/nanalive-link-protocol" }
+nanalive-link-protocol = { git = "https://github.com/sena-nana/nanalive-link-protocol.git", rev = "2c3eccf05de42184500e9cb4d6daa70d3d19da26" }
 quinn = { version = "0.11.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 rcgen = "0.13.2"
 ring = "0.17.14"

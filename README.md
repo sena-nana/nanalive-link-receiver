@@ -7,15 +7,18 @@ publishes the resulting texture through Spout 2.
 
 ## Protocol and dependency pins
 
-- `vendor/NanaLive` is a git submodule pinned at `2cc01e4`; the receiver uses its
-  `nanalive-link-protocol` crate directly and does not copy the wire protocol.
+- [`nanalive-link-protocol`](https://github.com/sena-nana/nanalive-link-protocol)
+  is the canonical v1 wire-contract repository and is pinned at full commit
+  `2c3eccf05de42184500e9cb4d6daa70d3d19da26`; the receiver does not copy the
+  protocol source or depend on the private NanaLive application repository.
 - MutsukiLink is pinned at `2ffca07` with QUIC datagrams and mDNS discovery.
 - `nanalive-spout` is pinned at `7f7dfe1` with only `gpu-dx11-texture` enabled.
 
-Clone with submodules:
+Clone normally; all source dependencies are fetched from their pinned public
+repositories:
 
 ```powershell
-git clone --recurse-submodules https://github.com/sena-nana/nanalive-link-receiver.git
+git clone https://github.com/sena-nana/nanalive-link-receiver.git
 ```
 
 ## Run on Windows
